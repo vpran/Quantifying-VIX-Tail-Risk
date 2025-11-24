@@ -7,6 +7,8 @@ import pandas as pd
 from scipy import stats
 from statsmodels.tsa.stattools import acovf
 
+from . import config
+
 
 def _ensure_series(obj, index, name):
     if isinstance(obj, pd.Series):
@@ -46,7 +48,12 @@ def log_score(actual: pd.Series, mean: pd.Series, variance: pd.Series) -> float:
     variance = _ensure_series(variance, actual.index, "var")
     aligned = pd.concat([actual, mean, variance], axis=1).dropna()
     aligned.columns = ["actual", "mean", "var"]
-    ll = stats.norm.logpdf(aligned["actual"], loc=aligned["mean"], scale=np.sqrt(aligned["var"]))
+    aligned["var"] = aligned["var"].clip(lower=config.PIT_CLIP_EPS)
+    ll = stats.norm.logpdf(
+        aligned["actual"],
+        loc=aligned["mean"],
+        scale=np.sqrt(aligned["var"]),
+    )
     return float(ll.mean())
 
 
@@ -67,7 +74,20 @@ def pit_values(actual: pd.Series, mean: pd.Series, variance: pd.Series) -> pd.Se
 
     mean = _ensure_series(mean, actual.index, "mean")
     variance = _ensure_series(variance, actual.index, "var")
-    return stats.norm.cdf(actual, loc=mean, scale=np.sqrt(variance))
+    pit = stats.norm.cdf(actual, loc=mean, scale=np.sqrt(variance))
+    return pd.Series(pit, index=actual.index, name="pit")
+
+
+def pit_log_loss(pit_values: pd.Series, clip: float = config.PIT_CLIP_EPS) -> pd.Series:
+    """Return negative log PIT values with clipping for numerical safety."""
+
+    series = _ensure_series(
+        pit_values,
+        pit_values.index if isinstance(pit_values, pd.Series) else None,
+        "pit",
+    )
+    clipped = series.clip(lower=clip, upper=1 - clip)
+    return -np.log(clipped)
 
 
 def diebold_mariano(loss_a: pd.Series, loss_b: pd.Series, h: int = 1) -> float:

@@ -76,22 +76,44 @@ def fit_hpp(interarrivals: pd.Series) -> HPPResult:
     return HPPResult(rate_per_day, rate_per_year, (ci_low * 252, ci_high * 252))
 
 
-def monthly_counts(shock_indicator: pd.Series) -> pd.DataFrame:
-    """Aggregate shocks by calendar month for NHPP modeling."""
+def monthly_counts(
+    shock_indicator: pd.Series,
+    log_vix: Optional[pd.Series] = None,
+) -> pd.DataFrame:
+    """Aggregate shocks by calendar month for NHPP modeling.
+
+    Parameters
+    ----------
+    shock_indicator:
+        Daily indicator (1/0) denoting whether a shock occurred.
+    log_vix:
+        Daily log VIX levels used to build *lagged* covariates that avoid
+        incorporating information from the same month as the response.
+    """
+
+    if log_vix is None:
+        raise ValueError("log_vix series is required to form lagged NHPP covariates.")
 
     df = shock_indicator.to_frame(name="shocks")
     monthly = df.resample("ME").sum()
     monthly["exposure"] = shock_indicator.resample("ME").size()
     monthly["time"] = np.arange(len(monthly))
-    monthly["avg_log_vix"] = monthly["shocks"].rolling(3, min_periods=1).mean()
     monthly["month"] = monthly.index.month
+
+    avg_log_vix = log_vix.resample("ME").mean()
+    monthly["lag_avg_log_vix"] = avg_log_vix.shift(1)
+    monthly = monthly.dropna(subset=["lag_avg_log_vix"])
     return monthly
 
 
 def fit_nhpp(counts: pd.DataFrame) -> NHPPResult:
     """Fit Poisson GLM with exposure to allow time-varying rates."""
 
-    design = pd.get_dummies(counts[["time", "avg_log_vix", "month"]], columns=["month"], drop_first=True)
+    design = pd.get_dummies(
+        counts[["time", "lag_avg_log_vix", "month"]],
+        columns=["month"],
+        drop_first=True,
+    )
     design = sm.add_constant(design)
     design = design.astype(float)
     model = sm.GLM(
