@@ -13,13 +13,13 @@ Shock-Persistence-and-Shock-Frequency-in-VIX/
 │   ├── 02_shock_arrivals.ipynb
 │   └── 03_forecast_evaluation.ipynb
 ├── src/                       # Reusable project modules
-│   ├── config.py
-│   ├── data_pipeline.py
-│   ├── features.py
-│   ├── volatility_models.py
-│   ├── shock_modeling.py
-│   ├── forecast_evaluation.py
-│   └── visualization.py
+│   ├── config.py              # shared paths/tunings
+│   ├── data_pipeline.py       # download & cleaning
+│   ├── features.py            # helper transforms
+│   ├── volatility_models.py   # AR/(E)GARCH fitting
+│   ├── shock_modeling.py      # shock definitions + Poisson
+│   ├── forecast_evaluation.py # forecasting + scoring
+│   └── visualization.py       # plotting utilities
 ├── requirements.txt
 └── README.md
 ```
@@ -37,6 +37,15 @@ Shock-Persistence-and-Shock-Frequency-in-VIX/
    - `notebooks/01_data_and_volatility.ipynb`: data ingestion, AR-GARCH/EGARCH estimation, half-life diagnostics.
    - `notebooks/02_shock_arrivals.ipynb`: shock labeling, inter-arrival analysis, Poisson GLM (NHPP) fits.
    - `notebooks/03_forecast_evaluation.ipynb`: forecast generation, calibration checks, Diebold–Mariano tests.
+
+   Behind the scenes, notebooks rely on the `src/` modules in the following conceptual order:
+   1. `config` → shared constants/paths.
+   2. `data_pipeline` → download, cleaning, log transforms.
+   3. `features` → helper columns (abs returns, calendar fields).
+   4. `volatility_models` → AR-GARCH/EGARCH estimation.
+   5. `shock_modeling` → quantile thresholds, Poisson modeling.
+   6. `forecast_evaluation` → scoring, PIT, Diebold–Mariano.
+   7. `visualization` → charts used throughout the notebooks.
 
    Each notebook caches Yahoo Finance pulls (`data/raw/vix_history.parquet`) for reproducibility. Set `force_download=True` in `data_pipeline.prepare_series` to refresh.
 

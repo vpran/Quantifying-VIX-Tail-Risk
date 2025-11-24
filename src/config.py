@@ -6,6 +6,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 RAW_DATA_DIR = DATA_DIR / "raw"
 CACHE_FILE = RAW_DATA_DIR / "vix_history.parquet"
+FIGURES_DIR = PROJECT_ROOT / "figures"
 DEFAULT_TICKER = "^VIX"
 DEFAULT_START = "2010-01-01"
 DEFAULT_END = None  # Use latest available

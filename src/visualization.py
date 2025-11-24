@@ -13,7 +13,20 @@ from . import config
 sns.set_style(config.PLOT_STYLE)
 
 
-def plot_vix_series(data: pd.DataFrame, shock_indicator: pd.Series | None = None) -> plt.Figure:
+def _save(fig: plt.Figure, name: str | None) -> None:
+    if not name:
+        return
+    config.FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    path = config.FIGURES_DIR / name
+    fig.savefig(path, bbox_inches="tight")
+    print(f"Saved figure to {path}")
+
+
+def plot_vix_series(
+    data: pd.DataFrame,
+    shock_indicator: pd.Series | None = None,
+    save_as: str | None = None,
+) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(10, 4))
     data["vix"].plot(ax=ax, color="#1f77b4", label="VIX")
     ax.set_ylabel("Level")
@@ -22,20 +35,22 @@ def plot_vix_series(data: pd.DataFrame, shock_indicator: pd.Series | None = None
         spike_dates = shock_indicator[shock_indicator == 1].index
         ax.scatter(spike_dates, data.loc[spike_dates, "vix"], color="red", s=15, label="Shock")
     ax.legend()
+    _save(fig, save_as)
     return fig
 
 
-def plot_residual_diagnostics(std_resid: pd.Series) -> plt.Figure:
+def plot_residual_diagnostics(std_resid: pd.Series, save_as: str | None = None) -> plt.Figure:
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
     sns.histplot(std_resid, ax=axes[0], kde=True, stat="density")
     axes[0].set_title("Std residual density")
     smoothed = (std_resid**2).rolling(20).mean()
     axes[1].plot(smoothed)
     axes[1].set_title("Rolling variance of std residuals")
+    _save(fig, save_as)
     return fig
 
 
-def plot_shock_arrivals(counts: pd.DataFrame) -> plt.Figure:
+def plot_shock_arrivals(counts: pd.DataFrame, save_as: str | None = None) -> plt.Figure:
     """Render monthly shock counts with readable date axis."""
 
     monthly = counts.copy().sort_index()
@@ -51,12 +66,14 @@ def plot_shock_arrivals(counts: pd.DataFrame) -> plt.Figure:
     ax.xaxis.set_major_formatter(formatter)
     fig.autofmt_xdate(rotation=30, ha="right")
     fig.tight_layout()
+    _save(fig, save_as)
     return fig
 
 
-def plot_pit(pit_series: pd.Series) -> plt.Figure:
+def plot_pit(pit_series: pd.Series, save_as: str | None = None) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(6, 4))
     sns.histplot(pit_series, bins=20, stat="density", ax=ax)
     ax.axhline(1, color="black", linestyle="--", linewidth=1)
     ax.set_title("PIT histogram")
+    _save(fig, save_as)
     return fig
