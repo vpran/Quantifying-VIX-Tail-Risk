@@ -461,6 +461,96 @@ Recent & 13.6 & 0.216 & 2.95 & 4.70 & 5.63 \\
 \end{center}
 \end{frame}
 
+% ============================================================
+% CPP OUT-OF-SAMPLE EVALUATION
+% ============================================================
+
+\begin{frame}{CPP: Out-of-Sample Evaluation Framework}
+\textbf{Objective:} Test if CPP trained on historical data can forecast future shock dynamics.
+
+\vspace{0.5em}
+\textbf{Train-Test Split:}
+\begin{itemize}
+    \item Training: First 75\% of data (Jan 2010 -- Dec 2021)
+    \item Test: Remaining 25\% (Jan 2022 -- Nov 2025)
+\end{itemize}
+
+\vspace{0.5em}
+\textbf{Forecasting Approach:}
+\begin{enumerate}
+    \item Fit CPP on training data: estimate $\lambda$, $F$ (jump distribution)
+    \item For test period of $T$ days:
+    \begin{itemize}
+        \item Predicted shocks: $\hat{N} = \lambda \cdot T$
+        \item Predicted impact: $\hat{S} = \lambda \cdot \mathbb{E}[J] \cdot T$
+    \end{itemize}
+    \item Compare predictions to actual test period outcomes
+\end{enumerate}
+
+\vspace{0.5em}
+\textbf{Evaluation Metrics:}
+\begin{itemize}
+    \item Shock count error: $\frac{\hat{N} - N_{\text{actual}}}{N_{\text{actual}}}$
+    \item Impact error: $\frac{\hat{S} - S_{\text{actual}}}{S_{\text{actual}}}$
+    \item VaR exceedance: Did actual impact exceed predicted VaR 95\%?
+\end{itemize}
+\end{frame}
+
+\begin{frame}{CPP: Out-of-Sample Results}
+\begin{table}[ht]
+\centering
+\begin{tabular}{lcc}
+\toprule
+Metric & Value & Interpretation \\
+\midrule
+Training Period & 2010--2021 & 75\% of data \\
+Test Period & 2022--2025 & 25\% of data \\
+\midrule
+$\lambda$ (trained) & 0.050/day & 12.6 shocks/year \\
+Jump Dist (trained) & Pareto & $\alpha = 2.50$ \\
+$\mathbb{E}[J]$ (trained) & 0.211 & Mean jump size \\
+\midrule
+Test Shocks (Actual) & 63 & 1,036 test days \\
+Test Shocks (Predicted) & 51.8 & $\lambda \times 1036$ \\
+Shock Count Error & $-17.8\%$ & Slight underforecast \\
+\midrule
+Test Impact (Actual) & 13.4 & Cumulative $|r|$ \\
+Test Impact (Predicted) & 10.9 & $\lambda \cdot \mathbb{E}[J] \cdot T$ \\
+Impact Error & $-18.5\%$ & Slight underforecast \\
+\bottomrule
+\end{tabular}
+\end{table}
+\begin{itemize}
+    \item Model slightly underpredicts $\Rightarrow$ test period had above-average shock activity (2022 rate hikes, 2024 volatility).
+\end{itemize}
+\end{frame}
+
+\begin{frame}{CPP: Out-of-Sample Distribution}
+\begin{center}
+    \includegraphics[width=0.75\textwidth]{cpp_forecast.png}
+\end{center}
+\begin{itemize}
+    \item Gray: Simulated test period impacts using trained CPP.
+    \item Red dashed: Actual test period impact (13.4).
+    \item Actual falls within the bulk of the distribution $\Rightarrow$ model well-calibrated.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{CPP: Key Out-of-Sample Findings}
+\begin{enumerate}
+    \item \textbf{Reasonable Forecasts:} $\sim$18\% underforecast error is acceptable given test period included 2022 Fed rate hikes and 2024 August volatility spike.
+    
+    \item \textbf{Distribution Calibration:} Actual outcome at 72nd percentile of simulated distribution---model is not overconfident.
+    
+    \item \textbf{VaR Coverage:} Actual impact (13.4) did NOT exceed scaled VaR 95\% (15.2 for test period) $\Rightarrow$ risk measure is conservative.
+    
+    \item \textbf{Parameter Stability:} Pareto distribution with $\alpha \approx 2.5$ remains appropriate for test period shocks.
+\end{enumerate}
+
+\vspace{0.5em}
+\textbf{Implication:} CPP provides reliable out-of-sample forecasts for shock risk quantification. Model can be used for forward-looking risk management with appropriate uncertainty bounds.
+\end{frame}
+
 \begin{frame}{Shock Magnitudes Over Time}
 \begin{center}
     \includegraphics[width=0.6\textwidth]{shock_magnitudes.png}
@@ -573,6 +663,7 @@ HAR-RV & 1.271 \\
     \item \textbf{Self-Excitation:} Hawkes branching ratio $= 0.23$ $\Rightarrow$ shocks trigger more shocks.
     \item \textbf{Compound Poisson:} Pareto-distributed jumps; VaR 95\% $= 4.24$/year.
     \item \textbf{Regime Dependence:} COVID showed 76\% higher expected annual impact.
+    \item \textbf{CPP Out-of-Sample:} $\sim$18\% forecast error; VaR bounds respected; well-calibrated.
     \item \textbf{Forecasting:} EWMA beats GARCH on log-score; both well-calibrated.
 \end{enumerate}
 \end{frame}
@@ -627,6 +718,7 @@ HAR-RV & 1.271 \\
     \item VIX exhibits \textbf{persistent, asymmetric volatility clustering} well captured by EGARCH.
     \item Large spikes arrive at $\sim$13/year and exhibit \textbf{self-excitation} (Hawkes branching ratio 0.23).
     \item \textbf{Compound Poisson} quantifies aggregate shock risk: VaR 95\% $= 4.24$/year.
+    \item \textbf{CPP out-of-sample:} $\sim$18\% forecast error; VaR bounds respected; well-calibrated predictions.
     \item \textbf{COVID regime} showed 76\% higher expected annual impact than baseline.
     \item Out-of-sample, \textbf{EWMA remains a tough benchmark} to beat for density forecasting.
     \item The reproducible pipeline (\texttt{runall.py}) with \textbf{28 unit tests} enables transparent research.

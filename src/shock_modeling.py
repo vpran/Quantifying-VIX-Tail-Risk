@@ -793,3 +793,300 @@ def compute_cpp_percentiles(
         result[f"p{p}"] = np.percentile(paths, p, axis=0)
     
     return pd.DataFrame(result)
+
+
+# ---------------------------------------------------------------------------
+# CPP Train-Test Split and Out-of-Sample Evaluation
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CPPForecastResult:
+    """Results from CPP out-of-sample forecast evaluation."""
+    train_end_date: pd.Timestamp
+    test_start_date: pd.Timestamp
+    train_cpp: CompoundPoissonResult
+    test_n_shocks_actual: int
+    test_n_shocks_predicted: float
+    test_total_impact_actual: float
+    test_total_impact_predicted: float
+    shock_count_error: float  # (predicted - actual) / actual
+    impact_error: float       # (predicted - actual) / actual
+    var_95_exceeded: bool     # Did actual exceed VaR?
+    cvar_coverage: float      # Fraction of test period where actual < CVaR
+
+
+def cpp_train_test_split(
+    returns: pd.Series,
+    shock_indicator: pd.Series,
+    train_fraction: float = 0.75,
+) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    """Split returns and shock indicator into train and test sets.
+    
+    Parameters
+    ----------
+    returns : pd.Series
+        Full sample returns
+    shock_indicator : pd.Series
+        Full sample shock indicator
+    train_fraction : float
+        Fraction of data to use for training (default 0.75)
+        
+    Returns
+    -------
+    Tuple of (train_returns, test_returns, train_shocks, test_shocks)
+    """
+    n = len(returns)
+    split_idx = int(n * train_fraction)
+    
+    train_returns = returns.iloc[:split_idx]
+    test_returns = returns.iloc[split_idx:]
+    
+    # Align shock indicator with returns
+    train_shocks = shock_indicator.loc[train_returns.index]
+    test_shocks = shock_indicator.loc[test_returns.index]
+    
+    return train_returns, test_returns, train_shocks, test_shocks
+
+
+def evaluate_cpp_forecast(
+    returns: pd.Series,
+    shock_indicator: pd.Series,
+    train_fraction: float = 0.75,
+    n_simulations: int = 10000,
+) -> CPPForecastResult:
+    """Evaluate CPP model out-of-sample.
+    
+    Trains CPP on training set, then evaluates forecast accuracy on test set.
+    
+    Parameters
+    ----------
+    returns : pd.Series
+        Full sample returns
+    shock_indicator : pd.Series
+        Full sample shock indicator
+    train_fraction : float
+        Fraction of data to use for training
+    n_simulations : int
+        Number of Monte Carlo simulations for VaR estimation
+        
+    Returns
+    -------
+    CPPForecastResult with forecast evaluation metrics
+    """
+    # Split data
+    train_ret, test_ret, train_shocks, test_shocks = cpp_train_test_split(
+        returns, shock_indicator, train_fraction
+    )
+    
+    train_end_date = train_ret.index[-1]
+    test_start_date = test_ret.index[0]
+    
+    # Fit CPP on training data
+    train_cpp = fit_compound_poisson(train_ret, train_shocks, n_simulations=n_simulations)
+    
+    # Compute test period metrics
+    test_n_days = len(test_shocks)
+    test_years = test_n_days / 252.0
+    
+    # Actual test period outcomes
+    test_shock_dates = test_shocks[test_shocks == 1].index
+    test_n_shocks_actual = int(test_shocks.sum())
+    test_shock_magnitudes = np.abs(test_ret.loc[test_shock_dates].values)
+    test_total_impact_actual = float(np.sum(test_shock_magnitudes))
+    
+    # Predicted outcomes using trained CPP
+    test_n_shocks_predicted = train_cpp.arrival_rate * test_n_days
+    test_total_impact_predicted = train_cpp.arrival_rate * train_cpp.mean_jump * test_n_days
+    
+    # Compute errors
+    shock_count_error = (test_n_shocks_predicted - test_n_shocks_actual) / max(test_n_shocks_actual, 1)
+    impact_error = (test_total_impact_predicted - test_total_impact_actual) / max(test_total_impact_actual, 0.01)
+    
+    # Check if VaR was exceeded (scale VaR to test period length)
+    # VaR is annual, so scale by test_years
+    var_threshold = train_cpp.var_95 * test_years
+    var_95_exceeded = test_total_impact_actual > var_threshold
+    
+    # Simulate to get CVaR coverage (fraction of simulated paths that exceed actual)
+    np.random.seed(42)
+    simulated_impacts = []
+    for _ in range(n_simulations):
+        n_shocks_sim = np.random.poisson(train_cpp.arrival_rate * test_n_days)
+        if n_shocks_sim > 0:
+            jumps = _sample_from_distribution(
+                train_cpp.jump_distribution,
+                train_cpp.jump_params,
+                n_shocks_sim
+            )
+            simulated_impacts.append(np.sum(jumps))
+        else:
+            simulated_impacts.append(0)
+    simulated_impacts = np.array(simulated_impacts)
+    
+    # CVaR coverage: fraction of simulations where simulated impact >= actual impact
+    cvar_coverage = float(np.mean(simulated_impacts >= test_total_impact_actual))
+    
+    return CPPForecastResult(
+        train_end_date=train_end_date,
+        test_start_date=test_start_date,
+        train_cpp=train_cpp,
+        test_n_shocks_actual=test_n_shocks_actual,
+        test_n_shocks_predicted=test_n_shocks_predicted,
+        test_total_impact_actual=test_total_impact_actual,
+        test_total_impact_predicted=test_total_impact_predicted,
+        shock_count_error=shock_count_error,
+        impact_error=impact_error,
+        var_95_exceeded=var_95_exceeded,
+        cvar_coverage=cvar_coverage,
+    )
+
+
+def cpp_rolling_forecast(
+    returns: pd.Series,
+    shock_indicator: pd.Series,
+    train_fraction: float = 0.75,
+    window_months: int = 3,
+    n_simulations: int = 5000,
+) -> pd.DataFrame:
+    """Rolling window CPP forecast evaluation.
+    
+    Fits CPP on expanding window, forecasts next window_months, and evaluates.
+    
+    Parameters
+    ----------
+    returns : pd.Series
+        Full sample returns
+    shock_indicator : pd.Series
+        Full sample shock indicator
+    train_fraction : float
+        Initial training fraction
+    window_months : int
+        Forecast horizon in months
+    n_simulations : int
+        Monte Carlo simulations per forecast
+        
+    Returns
+    -------
+    DataFrame with rolling forecast results
+    """
+    train_ret, test_ret, train_shocks, test_shocks = cpp_train_test_split(
+        returns, shock_indicator, train_fraction
+    )
+    
+    results = []
+    
+    # Get unique months in test period
+    test_months = test_ret.resample("ME").size().index
+    
+    for i, forecast_end in enumerate(test_months[window_months-1:]):
+        # Determine forecast window
+        forecast_start_idx = i
+        forecast_start = test_months[forecast_start_idx]
+        
+        # Get forecast window data
+        window_mask = (test_ret.index >= forecast_start) & (test_ret.index <= forecast_end)
+        window_returns = test_ret[window_mask]
+        window_shocks = test_shocks[window_mask]
+        
+        if len(window_shocks) < 10:
+            continue
+        
+        # Training data: everything before forecast window
+        train_end = forecast_start - pd.Timedelta(days=1)
+        combined_train_ret = returns[returns.index <= train_end]
+        combined_train_shocks = shock_indicator.loc[combined_train_ret.index]
+        
+        if combined_train_shocks.sum() < 20:
+            continue
+        
+        try:
+            # Fit CPP on training data
+            cpp_fit = fit_compound_poisson(
+                combined_train_ret, 
+                combined_train_shocks,
+                n_simulations=n_simulations
+            )
+            
+            # Compute actual outcomes in forecast window
+            n_days = len(window_shocks)
+            actual_shocks = int(window_shocks.sum())
+            shock_dates = window_shocks[window_shocks == 1].index
+            actual_impact = float(np.abs(window_returns.loc[shock_dates]).sum()) if len(shock_dates) > 0 else 0
+            
+            # Predicted outcomes
+            pred_shocks = cpp_fit.arrival_rate * n_days
+            pred_impact = cpp_fit.arrival_rate * cpp_fit.mean_jump * n_days
+            
+            results.append({
+                "forecast_start": forecast_start,
+                "forecast_end": forecast_end,
+                "n_days": n_days,
+                "actual_shocks": actual_shocks,
+                "pred_shocks": pred_shocks,
+                "shock_error": (pred_shocks - actual_shocks) / max(actual_shocks, 1),
+                "actual_impact": actual_impact,
+                "pred_impact": pred_impact,
+                "impact_error": (pred_impact - actual_impact) / max(actual_impact, 0.01),
+                "arrival_rate": cpp_fit.arrival_rate,
+                "mean_jump": cpp_fit.mean_jump,
+                "jump_dist": cpp_fit.jump_distribution,
+            })
+        except Exception:
+            continue
+    
+    return pd.DataFrame(results)
+
+
+def cpp_forecast_summary(forecast_result: CPPForecastResult) -> pd.DataFrame:
+    """Create summary table from CPP forecast results.
+    
+    Parameters
+    ----------
+    forecast_result : CPPForecastResult
+        Output from evaluate_cpp_forecast
+        
+    Returns
+    -------
+    DataFrame with summary statistics
+    """
+    cpp = forecast_result.train_cpp
+    
+    data = {
+        "Metric": [
+            "Training Period End",
+            "Test Period Start",
+            "Arrival Rate (λ/day)",
+            "Annual Arrival Rate",
+            "Jump Distribution",
+            "Mean Jump E[J]",
+            "Std Jump",
+            "Test Shocks (Actual)",
+            "Test Shocks (Predicted)",
+            "Shock Count Error",
+            "Test Impact (Actual)",
+            "Test Impact (Predicted)",
+            "Impact Error",
+            "VaR 95% Exceeded",
+            "Tail Coverage (P(sim ≥ actual))",
+        ],
+        "Value": [
+            forecast_result.train_end_date.strftime("%Y-%m-%d"),
+            forecast_result.test_start_date.strftime("%Y-%m-%d"),
+            f"{cpp.arrival_rate:.4f}",
+            f"{cpp.arrival_rate_annual:.2f}",
+            cpp.jump_distribution.title(),
+            f"{cpp.mean_jump:.4f}",
+            f"{cpp.std_jump:.4f}",
+            f"{forecast_result.test_n_shocks_actual}",
+            f"{forecast_result.test_n_shocks_predicted:.1f}",
+            f"{forecast_result.shock_count_error*100:.1f}%",
+            f"{forecast_result.test_total_impact_actual:.3f}",
+            f"{forecast_result.test_total_impact_predicted:.3f}",
+            f"{forecast_result.impact_error*100:.1f}%",
+            "Yes" if forecast_result.var_95_exceeded else "No",
+            f"{forecast_result.cvar_coverage*100:.1f}%",
+        ],
+    }
+    
+    return pd.DataFrame(data)

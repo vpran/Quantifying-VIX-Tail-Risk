@@ -486,3 +486,240 @@ def plot_shock_magnitude_over_time(
     fig.tight_layout()
     _save(fig, save_as)
     return fig
+
+
+def plot_cpp_forecast_evaluation(
+    forecast_result,
+    returns: pd.Series,
+    shock_indicator: pd.Series,
+    n_simulations: int = 5000,
+    save_as: str | None = None,
+) -> plt.Figure:
+    """Visualize CPP out-of-sample forecast results.
+    
+    Parameters
+    ----------
+    forecast_result : CPPForecastResult
+        Output from evaluate_cpp_forecast
+    returns : pd.Series
+        Full sample returns
+    shock_indicator : pd.Series
+        Full sample shock indicator
+    n_simulations : int
+        Monte Carlo simulations for distribution
+    save_as : str | None
+        Filename to save figure
+        
+    Returns
+    -------
+    Figure with 4 subplots showing forecast evaluation
+    """
+    cpp = forecast_result.train_cpp
+    
+    # Split data
+    test_start = forecast_result.test_start_date
+    train_end = forecast_result.train_end_date
+    test_returns = returns[returns.index >= test_start]
+    test_shocks = shock_indicator.loc[test_returns.index]
+    
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    
+    # (0,0) Cumulative impact: train vs test
+    train_returns = returns[returns.index <= train_end]
+    train_shocks = shock_indicator.loc[train_returns.index]
+    
+    # Compute cumulative impacts
+    all_shock_dates = shock_indicator[shock_indicator == 1].index
+    shock_mags = np.abs(returns.loc[all_shock_dates])
+    
+    cumulative_impact = []
+    cum = 0
+    for date in returns.index:
+        if date in all_shock_dates:
+            cum += np.abs(returns.loc[date])
+        cumulative_impact.append(cum)
+    cumulative_series = pd.Series(cumulative_impact, index=returns.index)
+    
+    # Plot with train/test split marked
+    axes[0, 0].plot(cumulative_series.loc[:train_end], color="#1f77b4", 
+                     linewidth=1.5, label="Training Period")
+    axes[0, 0].plot(cumulative_series.loc[test_start:], color="#d62728", 
+                     linewidth=1.5, label="Test Period")
+    axes[0, 0].axvline(test_start, color="black", linestyle="--", linewidth=1.5, 
+                        label="Train/Test Split")
+    axes[0, 0].set_xlabel("Date")
+    axes[0, 0].set_ylabel("Cumulative Shock Impact")
+    axes[0, 0].set_title("Cumulative Shock Impact (Train/Test Split)")
+    axes[0, 0].legend()
+    
+    # (0,1) Simulated vs Actual test period distribution
+    np.random.seed(42)
+    test_n_days = len(test_shocks)
+    simulated_impacts = []
+    for _ in range(n_simulations):
+        n_shocks_sim = np.random.poisson(cpp.arrival_rate * test_n_days)
+        if n_shocks_sim > 0:
+            from .shock_modeling import _sample_from_distribution
+            jumps = _sample_from_distribution(
+                cpp.jump_distribution,
+                cpp.jump_params,
+                n_shocks_sim
+            )
+            simulated_impacts.append(np.sum(jumps))
+        else:
+            simulated_impacts.append(0)
+    simulated_impacts = np.array(simulated_impacts)
+    
+    sns.histplot(simulated_impacts, bins=50, stat="density", ax=axes[0, 1],
+                 color="#2ca02c", alpha=0.6, label="Simulated Distribution")
+    axes[0, 1].axvline(forecast_result.test_total_impact_actual, color="#d62728", 
+                        linewidth=2.5, linestyle="--", 
+                        label=f"Actual = {forecast_result.test_total_impact_actual:.3f}")
+    axes[0, 1].axvline(forecast_result.test_total_impact_predicted, color="#1f77b4",
+                        linewidth=2.5, linestyle="-.",
+                        label=f"Predicted = {forecast_result.test_total_impact_predicted:.3f}")
+    axes[0, 1].set_xlabel("Cumulative Impact (Test Period)")
+    axes[0, 1].set_ylabel("Density")
+    axes[0, 1].set_title("Test Period Impact: Simulated vs Actual")
+    axes[0, 1].legend()
+    
+    # (1,0) Shock count comparison (bar chart)
+    categories = ["Shock Count", "Total Impact"]
+    actual_vals = [forecast_result.test_n_shocks_actual, forecast_result.test_total_impact_actual]
+    pred_vals = [forecast_result.test_n_shocks_predicted, forecast_result.test_total_impact_predicted]
+    
+    x = np.arange(len(categories))
+    width = 0.35
+    
+    # Normalize for display (different scales)
+    axes[1, 0].bar(x - width/2, [forecast_result.test_n_shocks_actual, 0], 
+                    width, label="Actual", color="#d62728", alpha=0.8)
+    axes[1, 0].bar(x + width/2, [forecast_result.test_n_shocks_predicted, 0], 
+                    width, label="Predicted", color="#1f77b4", alpha=0.8)
+    
+    # Add text annotations
+    axes[1, 0].text(-width/2, forecast_result.test_n_shocks_actual + 1, 
+                     f"{forecast_result.test_n_shocks_actual}", ha="center", fontsize=11)
+    axes[1, 0].text(width/2, forecast_result.test_n_shocks_predicted + 1, 
+                     f"{forecast_result.test_n_shocks_predicted:.1f}", ha="center", fontsize=11)
+    
+    axes[1, 0].set_xticks([0])
+    axes[1, 0].set_xticklabels(["Test Period Shock Count"])
+    axes[1, 0].set_ylabel("Count")
+    axes[1, 0].set_title(f"Shock Count: Error = {forecast_result.shock_count_error*100:.1f}%")
+    axes[1, 0].legend()
+    
+    # (1,1) Summary metrics table
+    metrics = [
+        ("Training End", train_end.strftime("%Y-%m-%d")),
+        ("Test Start", test_start.strftime("%Y-%m-%d")),
+        ("Test Days", f"{test_n_days}"),
+        ("Arrival Rate (λ/day)", f"{cpp.arrival_rate:.4f}"),
+        ("Mean Jump E[J]", f"{cpp.mean_jump:.4f}"),
+        ("Jump Distribution", cpp.jump_distribution.title()),
+        ("Actual Shocks", f"{forecast_result.test_n_shocks_actual}"),
+        ("Predicted Shocks", f"{forecast_result.test_n_shocks_predicted:.1f}"),
+        ("Shock Count Error", f"{forecast_result.shock_count_error*100:.1f}%"),
+        ("Actual Impact", f"{forecast_result.test_total_impact_actual:.3f}"),
+        ("Predicted Impact", f"{forecast_result.test_total_impact_predicted:.3f}"),
+        ("Impact Error", f"{forecast_result.impact_error*100:.1f}%"),
+        ("VaR 95% Exceeded?", "Yes" if forecast_result.var_95_exceeded else "No"),
+        ("P(sim ≥ actual)", f"{forecast_result.cvar_coverage*100:.1f}%"),
+    ]
+    
+    axes[1, 1].axis("off")
+    table = axes[1, 1].table(
+        cellText=[[m, v] for m, v in metrics],
+        colLabels=["Metric", "Value"],
+        loc="center",
+        cellLoc="left",
+        colColours=["#d5e5ff", "#d5e5ff"],
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1.2, 1.5)
+    axes[1, 1].set_title("CPP Out-of-Sample Evaluation Summary", pad=20)
+    
+    fig.tight_layout()
+    _save(fig, save_as)
+    return fig
+
+
+def plot_cpp_rolling_forecast(
+    rolling_df: pd.DataFrame,
+    save_as: str | None = None,
+) -> plt.Figure:
+    """Plot rolling CPP forecast results.
+    
+    Parameters
+    ----------
+    rolling_df : pd.DataFrame
+        Output from cpp_rolling_forecast
+    save_as : str | None
+        Filename to save figure
+        
+    Returns
+    -------
+    Figure with rolling forecast evaluation plots
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(14, 8))
+    
+    # (0,0) Actual vs Predicted shock counts over time
+    axes[0, 0].plot(rolling_df["forecast_end"], rolling_df["actual_shocks"], 
+                     marker="o", color="#d62728", label="Actual", linewidth=1.5)
+    axes[0, 0].plot(rolling_df["forecast_end"], rolling_df["pred_shocks"], 
+                     marker="s", color="#1f77b4", label="Predicted", linewidth=1.5)
+    axes[0, 0].set_xlabel("Forecast Window End")
+    axes[0, 0].set_ylabel("Shock Count")
+    axes[0, 0].set_title("Rolling Forecast: Shock Counts")
+    axes[0, 0].legend()
+    axes[0, 0].tick_params(axis="x", rotation=30)
+    
+    # (0,1) Actual vs Predicted impact over time
+    axes[0, 1].plot(rolling_df["forecast_end"], rolling_df["actual_impact"], 
+                     marker="o", color="#d62728", label="Actual", linewidth=1.5)
+    axes[0, 1].plot(rolling_df["forecast_end"], rolling_df["pred_impact"], 
+                     marker="s", color="#1f77b4", label="Predicted", linewidth=1.5)
+    axes[0, 1].set_xlabel("Forecast Window End")
+    axes[0, 1].set_ylabel("Cumulative Impact")
+    axes[0, 1].set_title("Rolling Forecast: Cumulative Impact")
+    axes[0, 1].legend()
+    axes[0, 1].tick_params(axis="x", rotation=30)
+    
+    # (1,0) Forecast errors over time
+    axes[1, 0].bar(rolling_df["forecast_end"], rolling_df["shock_error"] * 100, 
+                    color="#ff7f0e", alpha=0.7, width=20)
+    axes[1, 0].axhline(0, color="black", linestyle="--", linewidth=1)
+    axes[1, 0].set_xlabel("Forecast Window End")
+    axes[1, 0].set_ylabel("Error (%)")
+    axes[1, 0].set_title("Shock Count Forecast Error")
+    axes[1, 0].tick_params(axis="x", rotation=30)
+    
+    # (1,1) Summary statistics
+    mean_shock_error = rolling_df["shock_error"].mean() * 100
+    std_shock_error = rolling_df["shock_error"].std() * 100
+    mean_impact_error = rolling_df["impact_error"].mean() * 100
+    std_impact_error = rolling_df["impact_error"].std() * 100
+    
+    summary_text = (
+        f"Rolling Forecast Summary\n"
+        f"{'='*35}\n"
+        f"Number of forecast windows: {len(rolling_df)}\n\n"
+        f"Shock Count Error:\n"
+        f"  Mean: {mean_shock_error:.1f}%\n"
+        f"  Std:  {std_shock_error:.1f}%\n\n"
+        f"Impact Error:\n"
+        f"  Mean: {mean_impact_error:.1f}%\n"
+        f"  Std:  {std_impact_error:.1f}%\n\n"
+        f"Avg Arrival Rate: {rolling_df['arrival_rate'].mean():.4f}/day\n"
+        f"Avg Mean Jump: {rolling_df['mean_jump'].mean():.4f}"
+    )
+    
+    axes[1, 1].axis("off")
+    axes[1, 1].text(0.1, 0.9, summary_text, transform=axes[1, 1].transAxes,
+                     fontsize=11, verticalalignment="top", fontfamily="monospace",
+                     bbox=dict(boxstyle="round", facecolor="#f0f0f0", alpha=0.8))
+    
+    fig.tight_layout()
+    _save(fig, save_as)
+    return fig
