@@ -16,7 +16,7 @@
 % Path to figures folder (one level up)
 \graphicspath{{../figures/}}
 
-% Custom footer: show only institute (not author)
+% Custom footer
 \setbeamertemplate{footline}{
   \leavevmode%
   \hbox{%
@@ -33,15 +33,14 @@
   \vskip0pt%
 }
 
-% Smaller author font on title page
 \setbeamerfont{author}{size=\small}
 
 % ============================================================
 %  Title
 % ============================================================
-\title[VIX Shock Persistence \& Frequency]{Shock Persistence and Shock Frequency in VIX}
-\subtitle{A Quantitative Analysis of Volatility Dynamics}
-\author{CHONG Tin Tak (20920359) \newline CHOI Man Hou (20894196) \newline Vittorio Prana CHANDREAN (20896895)}
+\title[Modelling VIX Dynamics]{Modelling VIX Dynamics: GARCH vs Compound Poisson}
+\subtitle{Contrasting Volatility-Clustering and Jump-Driven Approaches}
+\author{Vittorio Prana CHANDREAN (20896895) \newline CHONG Tin Tak (20920359) \newline CHOI Man Hou (20894196)}
 \institute{HKUST - IEDA4000E}
 \date{\today}
 
@@ -62,53 +61,176 @@
 \section{Introduction}
 % ============================================================
 
+\begin{frame}{Objective}
+\textbf{Compare two frameworks for VIX modeling:}
+\begin{enumerate}
+    \item Classical \textbf{GARCH-family models} on log-VIX (capturing volatility clustering)
+    \item A \textbf{Compound Poisson Process (CPP)} for VIX shocks
+\end{enumerate}
+
+\vspace{1em}
+\textbf{Scope:}
+\begin{itemize}
+    \item 15+ years of daily VIX (log) data
+    \item Spanning calm and \textbf{crisis regimes}
+    \item Fit each model and assess risk (VaR/CVaR)
+\end{itemize}
+
+\vspace{1em}
+\textbf{Key Focus:}
+\begin{itemize}
+    \item Model fit and interpretability of parameters
+    \item Risk implications (especially extreme moves)
+\end{itemize}
+
+\vspace{0.5em}
+\textit{Volatility (GARCH) and jump (CPP) models are complementary: GARCH captures smooth variance dynamics, CPP targets tail events and separates shock timing/magnitude.}
+\end{frame}
+
 \begin{frame}{What is VIX?}
 \begin{itemize}
-    \item \textbf{VIX} = CBOE Volatility Index, derived from S\&P~500 option prices.
-    \item Often called the ``fear gauge'' --- rises when markets expect turbulence.
-    \item Understanding VIX dynamics is crucial for:
-    \begin{itemize}
-        \item Risk management and hedging
-        \item Derivatives pricing
-        \item Portfolio allocation
-    \end{itemize}
+    \item \textbf{VIX} = CBOE Volatility Index
+    \item Measures the market's expectation of 30-day volatility (S\&P 500 options)
+    \item Often called the ``\textbf{fear gauge}'' --- moves inversely to the S\&P 500
+\end{itemize}
+
+\vspace{1em}
+\textbf{Applications:}
+\begin{itemize}
+    \item Risk management and hedging
+    \item Derivatives pricing
+    \item Portfolio allocation
+    \item Market sentiment indicator
 \end{itemize}
 \end{frame}
 
-\begin{frame}{Research Questions}
+\begin{frame}{Why Model Volatility?}
+\textit{``Volatility drives option pricing \& risk, so understanding its behavior is crucial for hedging and forecasting''}
+
+\vspace{1em}
+\textbf{Empirical features:}
+\begin{itemize}
+    \item VIX exhibits \textbf{mean reversion} and heavy-tailed spikes during crises
+    \item Modelling VIX dynamics helps in forecasting stress periods and hedging volatility exposure
+\end{itemize}
+
+\vspace{1em}
+\textbf{Data note:}
+\begin{itemize}
+    \item We model \textbf{log-VIX} (or log-changes) to stabilize variance
+    \item Analysis covers multiple regimes (pre-crisis, 2020 COVID crash, etc.)
+\end{itemize}
+
+\vspace{0.5em}
+\textit{VIX reflects forward volatility; its large jumps in crises motivate heavy-tailed modelling.}
+\end{frame}
+
+% ============================================================
+\section{Background \& Methodology}
+% ============================================================
+
+\begin{frame}{GARCH Models for Volatility}
+\textbf{GARCH(1,1) specification:}
+\[
+a_t = \sigma_t \epsilon_t, \quad \sigma_t^2 = \omega + \alpha\, a_{t-1}^2 + \beta\, \sigma_{t-1}^2
+\]
+
+\vspace{0.5em}
+\textbf{Behaviour:}
+\begin{itemize}
+    \item \textbf{Volatility clustering}: past large shocks $a_{t-1}^2$ increase current variance
+    \item The \textbf{persistence} of volatility is governed by $\alpha + \beta$
+    \item Values near 1 imply long memory
+\end{itemize}
+
+\vspace{0.5em}
+\textbf{Squared-returns:}
+\begin{itemize}
+    \item $a_t^2$ follows an ARMA(1,1) process with AR coefficient $\phi = \alpha + \beta$
+    \item Slow ACF decay when $\alpha + \beta \approx 1$
+\end{itemize}
+
+\vspace{0.5em}
+\textbf{Fitting:} Use (quasi) MLE assuming Gaussian errors. Standardized residuals $\epsilon_t$ should be i.i.d.\ and uncorrelated.
+\end{frame}
+
+\begin{frame}{EGARCH: Modelling Asymmetry}
+\textbf{EGARCH (Nelson, 1991):}
+\[
+\ln \sigma_t^2 = \omega + \beta \ln \sigma_{t-1}^2 + \alpha\bigl(|\epsilon_{t-1}| - \mathbb{E}|\epsilon|\bigr) + \gamma\, \epsilon_{t-1}
+\]
+
+\vspace{0.5em}
+\textbf{Asymmetry:}
+\begin{itemize}
+    \item The term $\gamma \epsilon_{t-1}$ allows negative shocks ($\epsilon < 0$) to impact $\sigma_t^2$ differently
+    \item Typically $\gamma < 0$ for financial data: bad news increases future vol more than good news
+\end{itemize}
+
+\vspace{0.5em}
+\textbf{Advantages:}
+\begin{itemize}
+    \item Ensures $\sigma_t^2 > 0$ without parameter constraints
+    \item Captures ``\textbf{leverage effect}'' --- higher sensitivity to negative returns
+\end{itemize}
+
+\vspace{0.5em}
+\textbf{Note:} If $\gamma \approx 0$, EGARCH reduces to symmetric log-GARCH.
+\end{frame}
+
+\begin{frame}{Compound Poisson Process (CPP)}
+\textbf{CPP formulation:} Let $N(t) \sim \text{Pois}(\lambda t)$ count shocks up to time $t$, and let $J_1, J_2, \ldots$ be i.i.d.\ positive shock sizes. The total shock impact is:
+\[
+\boxed{S(t) = \sum_{i=1}^{N(t)} J_i}, \quad S(0) = 0
+\]
+
+\vspace{0.5em}
+\textbf{Components:}
+\begin{itemize}
+    \item $N(t)$: captures shock \textbf{arrivals} (\# days with extreme moves) at rate $\lambda$
+    \item $J_i$: captures shock \textbf{magnitude} (absolute log-change in VIX)
+\end{itemize}
+
+\vspace{0.5em}
+\textbf{Fitting:}
 \begin{enumerate}
-    \item \textbf{How persistent is volatility?}\\
-          How long does a VIX shock take to decay?
-    \item \textbf{How frequently do large spikes occur?}\\
-          Can we model extreme events as a point process?
-    \item \textbf{Do shocks cluster?}\\
-          Is there self-excitation in shock arrivals?
-    \item \textbf{How do regimes affect shock dynamics?}\\
-          Do crisis periods show different behavior?
-    \item \textbf{Can we forecast VIX volatility?}\\
-          Do GARCH-type models beat simple baselines out-of-sample?
+    \item Estimate $\lambda$ (annual jump rate) from counts
+    \item Fit a distribution $F$ to observed jump sizes
+    \item Simulate $S(1)$ (one year's total shocks) by sampling $N \sim \text{Pois}(\lambda)$ and drawing $J_i$ from $F$
 \end{enumerate}
 \end{frame}
 
 % ============================================================
-\section{Data}
+\section{Data Pipeline}
 % ============================================================
 
-\begin{frame}{Data Overview}
+\begin{frame}{Data Source \& Preparation}
+\textbf{Data:}
 \begin{itemize}
-    \item \textbf{Source:} Yahoo Finance (ticker \texttt{\^{}VIX})
-    \item \textbf{Period:} January 2010 -- November 2025
-    \item \textbf{Observations:} 4,148 business days
-    \item \textbf{Pre-processing:}
-    \begin{itemize}
-        \item Forward-fill missing dates
-        \item 0.1\% winsorization to limit outlier influence
-        \item Compute $\log(\text{VIX})$ and daily log-changes $\Delta\log(\text{VIX})$
-    \end{itemize}
+    \item Daily VIX index levels (CBOE) for 15+ years
+    \item \textbf{Train:} 2010--2021; \textbf{Test:} 2022--2025
+    \item Compute log-VIX and log-changes
+\end{itemize}
+
+\vspace{1em}
+\textbf{Regimes:}
+\begin{itemize}
+    \item Pre-Crisis (2010--2019)
+    \item COVID (2020 crash)
+    \item Post-COVID (2021--2023 recovery)
+    \item Recent (2024--2025)
+\end{itemize}
+
+\vspace{1em}
+\textbf{Summary Stats:}
+\begin{itemize}
+    \item Expected mean-reversion in log-VIX
+    \item Variance spikes in crises
+    \item $\alpha + \beta \approx 1$ in GARCH indicates high persistence
 \end{itemize}
 \end{frame}
 
-\begin{frame}{VIX Time Series}
+\begin{frame}{Log-VIX Time Series}
 \begin{center}
     \includegraphics[width=0.85\textwidth]{vix_series.png}
 \end{center}
@@ -118,162 +240,38 @@
 \end{frame}
 
 % ============================================================
-\section{Methodology}
-% ============================================================
-
-\begin{frame}{Volatility Models: GARCH Family}
-\textbf{GARCH(1,1):}
-\[
-\sigma_t^2 = \omega + \alpha\,\varepsilon_{t-1}^2 + \beta\,\sigma_{t-1}^2
-\]
-
-\textbf{EGARCH(1,1):}
-\[
-\ln\sigma_t^2 = \omega + \beta\ln\sigma_{t-1}^2 + \alpha\bigl(|z_{t-1}| - \mathbb{E}|z|\bigr) + \gamma\, z_{t-1}
-\]
-
-\textbf{GJR-GARCH(1,1):}
-\[
-\sigma_t^2 = \omega + (\alpha + \gamma\, \mathbf{1}_{\varepsilon_{t-1}<0})\,\varepsilon_{t-1}^2 + \beta\,\sigma_{t-1}^2
-\]
-\begin{itemize}
-    \item GARCH: Symmetric; EGARCH/GJR: Asymmetric (leverage effect via $\gamma$).
-    \item Distribution: Auto-selected (Normal, Student-t, GED) via PIT diagnostics.
-\end{itemize}
-\end{frame}
-
-\begin{frame}{HAR-RV: Realized Volatility Model}
-\textbf{Heterogeneous Autoregressive Realized Volatility (Corsi, 2009):}
-\[
-RV_{t+1} = \beta_0 + \beta_d\, RV_t + \beta_w\, \overline{RV}_{t}^{(w)} + \beta_m\, \overline{RV}_{t}^{(m)} + \varepsilon_{t+1}
-\]
-where:
-\begin{itemize}
-    \item $RV_t = r_t^2$ (proxy for realized variance)
-    \item $\overline{RV}_{t}^{(w)} = \frac{1}{5}\sum_{i=0}^{4} RV_{t-i}$ (weekly average)
-    \item $\overline{RV}_{t}^{(m)} = \frac{1}{22}\sum_{i=0}^{21} RV_{t-i}$ (monthly average)
-\end{itemize}
-\vspace{0.5em}
-\textbf{Use:} Baseline model capturing heterogeneous investor horizons.
-\end{frame}
-
-\begin{frame}{Shock Identification: Two Approaches}
-\textbf{Method 1: Quantile-Based (Fixed Threshold)}
-\[
-\text{Shock}_t = \mathbf{1}\bigl\{\Delta\log(\text{VIX})_t \ge Q_{0.95}\bigr\}
-\]
-\begin{itemize}
-    \item Simple, interpretable: top 5\% of daily changes.
-\end{itemize}
-
-\vspace{1em}
-\textbf{Method 2: Volatility-Relative (Surprise-Based)}
-\[
-\text{Shock}_t = \mathbf{1}\bigl\{|r_t| > k \cdot \sigma_t\bigr\}, \quad k=2
-\]
-\begin{itemize}
-    \item Captures ``surprises'' relative to expected volatility.
-    \item More meaningful in high-volatility regimes.
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Point Process Models for Shock Arrivals}
-\textbf{Homogeneous Poisson Process (HPP):}
-\[
-\lambda(t) = \lambda \quad \text{(constant rate)}
-\]
-
-\textbf{Non-Homogeneous Poisson Process (NHPP):}
-\[
-\lambda(t) = \exp\bigl(\beta_0 + \beta_1 \cdot \text{lagged\_log\_VIX}_t\bigr)
-\]
-
-\textbf{Hawkes Self-Exciting Process:}
-\[
-\lambda(t) = \mu + \sum_{t_i < t} \alpha \cdot e^{-\beta(t - t_i)}
-\]
-\begin{itemize}
-    \item Each shock temporarily increases intensity $\Rightarrow$ \textbf{clustering}.
-    \item \textbf{Branching ratio} $= \alpha/\beta < 1 \Rightarrow$ stationary.
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Forecast Evaluation Framework}
-\begin{itemize}
-    \item \textbf{Out-of-Sample Design:}
-    \begin{itemize}
-        \item Train on first 75\% of data (through Dec 2021).
-        \item Monthly rolling re-estimation of GARCH.
-        \item Forecast 1-step-ahead variance into the remaining 25\%.
-    \end{itemize}
-    \item \textbf{Baselines:}
-    \begin{itemize}
-        \item EWMA ($\lambda = 0.94$)
-        \item 63-day rolling variance
-        \item HAR-RV model
-    \end{itemize}
-    \item \textbf{Metrics:}
-    \begin{itemize}
-        \item Log-score (predictive density evaluation)
-        \item 95\% coverage rate
-        \item PIT histogram (calibration diagnostic)
-        \item Diebold--Mariano test (statistical significance)
-    \end{itemize}
-\end{itemize}
-\end{frame}
-
-% ============================================================
-\section{Results}
+\section{Model Development \& Results}
 % ============================================================
 
 \begin{frame}{Volatility Model Comparison}
 \begin{table}[ht]
 \centering
-\begin{tabular}{lccccc}
+\begin{tabular}{lcccc}
 \toprule
-Model & Distribution & AIC & Persistence & Half-life & Leverage ($\gamma$) \\
+Model & Distribution & AIC & Persistence & Half-life \\
 \midrule
-GARCH(1,1) & GED & 27,531 & 0.852 & 4.3 days & -- \\
-\textbf{EGARCH(1,1)} & GED & \textbf{27,395} & 0.934 & 10.2 days & Yes \\
-GJR-GARCH(1,1) & GED & 27,447 & 0.866 & 4.8 days & $-0.27$ \\
+GARCH(1,1) & GED & 27,531 & 0.852 & 4.3 days \\
+\textbf{EGARCH(1,1)} & GED & \textbf{27,395} & 0.934 & 10.2 days \\
 \bottomrule
 \end{tabular}
 \end{table}
-\begin{itemize}
-    \item EGARCH achieves lowest AIC $\Rightarrow$ best in-sample fit.
-    \item Higher persistence in EGARCH $\Rightarrow$ shocks decay more slowly ($\approx$10 days half-life).
-    \item GJR-GARCH $\gamma < 0$: negative returns increase volatility more.
-\end{itemize}
-\end{frame}
 
-\begin{frame}{HAR-RV Results}
-\begin{table}[ht]
-\centering
-\begin{tabular}{lcc}
-\toprule
-Component & Coefficient & Interpretation \\
-\midrule
-$\beta_{\text{daily}}$ & 0.117 & Short-term (1-day) effect \\
-$\beta_{\text{weekly}}$ & 0.231 & Medium-term (5-day) effect \\
-$\beta_{\text{monthly}}$ & 0.042 & Long-term (22-day) effect \\
-\midrule
-$R^2$ & 0.049 & Explanatory power \\
-\bottomrule
-\end{tabular}
-\end{table}
+\vspace{0.5em}
+\textbf{Key Findings:}
 \begin{itemize}
-    \item Weekly component dominates $\Rightarrow$ swing traders' horizon matters most.
-    \item Low $R^2$ expected: squared returns are noisy proxies for true variance.
-    \item HAR-RV provides parsimonious baseline for comparison.
+    \item EGARCH achieves \textbf{lowest AIC} $\Rightarrow$ best in-sample fit
+    \item Higher persistence in EGARCH $\Rightarrow$ shocks decay more slowly ($\approx$10 days half-life)
+    \item GED distribution captures fat tails better than Normal or Student-t
 \end{itemize}
 \end{frame}
 
 \begin{frame}{News Impact Curve (Asymmetry)}
 \begin{center}
-    \includegraphics[width=0.7\textwidth]{news_impact.png}
+    \includegraphics[width=0.65\textwidth]{news_impact.png}
 \end{center}
 \begin{itemize}
     \item Positive shocks (VIX spikes) increase future variance more than negative shocks of equal magnitude.
+    \item EGARCH captures this \textbf{leverage effect}.
 \end{itemize}
 \end{frame}
 
@@ -286,97 +284,28 @@ $R^2$ & 0.049 & Explanatory power \\
 \end{itemize}
 \end{frame}
 
-\begin{frame}{Shock Statistics: Two Methods Compared}
-\begin{table}[ht]
-\centering
-\begin{tabular}{lcc}
-\toprule
-Metric & Quantile (95\%) & Vol-Relative ($2\sigma$) \\
-\midrule
-Threshold (avg) & 0.127 & 0.147 \\
-Total shocks & 208 & 207 \\
-Rate (shocks/year) & 9.0 & 9.0 \\
-\bottomrule
-\end{tabular}
-\end{table}
-\begin{itemize}
-    \item Both methods identify $\sim$9 shocks/year.
-    \item Vol-relative threshold adapts to market conditions.
-    \item NHPP: Lagged $\log$ VIX coefficient $= -0.16$ $\Rightarrow$ low VIX predicts fewer shocks.
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Hawkes Self-Exciting Process}
-\begin{table}[ht]
-\centering
-\begin{tabular}{lcc}
-\toprule
-Parameter & Value & Interpretation \\
-\midrule
-Baseline $\mu$ & 0.027/day & Background intensity \\
-Excitation $\alpha$ & 0.043 & Jump after each shock \\
-Decay $\beta$ & 0.183 & Rate of decay \\
-Branching ratio & 0.23 & Fraction triggered by past shocks \\
-Half-life & 3.8 days & Excitation halving time \\
-\bottomrule
-\end{tabular}
-\end{table}
-\begin{itemize}
-    \item Branching ratio $< 1$ $\Rightarrow$ process is \textbf{stationary}.
-    \item $\approx$23\% of shocks are ``triggered'' by previous shocks.
-    \item Excitation decays with $\sim$4-day half-life.
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Hawkes Intensity Over Time}
-\begin{center}
-    \includegraphics[width=0.85\textwidth]{hawkes_intensity.png}
-\end{center}
-\begin{itemize}
-    \item Intensity spikes after each shock, then decays exponentially.
-    \item Clustering visible during crisis periods.
-\end{itemize}
-\end{frame}
-
 % ============================================================
 % COMPOUND POISSON PROCESS
 % ============================================================
 
-\begin{frame}{Compound Poisson Process: Motivation}
-\textbf{Problem:} HPP/NHPP/Hawkes model \emph{when} shocks occur, but not \emph{how big}.
-
-\vspace{0.5em}
-\textbf{Compound Poisson Process (CPP):}
-\[
-S(T) = \sum_{i=1}^{N(T)} J_i
-\]
-where:
-\begin{itemize}
-    \item $N(T) \sim \mathrm{Poisson}(\lambda T)$: number of shocks by time $T$
-    \item $J_i \sim F$: random jump sizes (iid)
-    \item $S(T)$: cumulative shock impact over horizon $T$
-\end{itemize}
-
-\vspace{0.5em}
-\textbf{Key Insight:} Models \emph{both} timing and magnitude $\Rightarrow$ risk quantification.
-\end{frame}
-
 \begin{frame}{CPP: Jump Size Distribution Selection}
-\textbf{Candidates for jump size distribution $F$:}
-\begin{itemize}
-    \item Exponential: $f(x) = \lambda e^{-\lambda x}$ (memoryless)
-    \item Gamma: $f(x) \propto x^{k-1} e^{-x/\theta}$ (flexible shape)
-    \item Lognormal: $\ln(J) \sim N(\mu, \sigma^2)$ (multiplicative)
-    \item \textbf{Pareto}: $f(x) = \frac{\alpha x_m^\alpha}{x^{\alpha+1}}$ (heavy tails)
-    \item Weibull: $f(x) \propto x^{k-1} e^{-(x/\lambda)^k}$ (hazard rate)
-\end{itemize}
+\begin{table}[ht]
+\centering
+\begin{tabular}{lcccc}
+\toprule
+Distribution & Parameters & AIC & KS Statistic & KS p-value \\
+\midrule
+Exponential & 1 & 412.3 & 0.142 & 0.003 \\
+Gamma & 2 & 385.7 & 0.089 & 0.085 \\
+Lognormal & 2 & 391.2 & 0.098 & 0.052 \\
+\textbf{Pareto} & 2 & \textbf{378.4} & \textbf{0.061} & \textbf{0.42} \\
+Weibull & 2 & 388.9 & 0.095 & 0.068 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \vspace{0.5em}
-\textbf{Selection via AIC + KS test:}
-\begin{itemize}
-    \item Best fit: \textbf{Pareto} ($\alpha = 2.50$, $x_{\min} = 0.127$)
-    \item KS p-value $= 0.42$ $\Rightarrow$ cannot reject fit
-\end{itemize}
+\textbf{Selection:} Pareto provides the best fit (lowest AIC, highest KS p-value).
 \end{frame}
 
 \begin{frame}{CPP: Fitted Parameters}
@@ -387,19 +316,19 @@ where:
 Parameter & Value & Interpretation \\
 \midrule
 $\lambda$ & 12.64/year & Shock arrival rate \\
-$\mathbb{E}[J]$ & 0.211 & Mean jump size (21\% log-move) \\
-$\mathrm{Std}[J]$ & 0.189 & Jump size volatility \\
-$\mathbb{E}[S]$ & 2.67/year & Expected annual impact \\
+$\alpha$ (Pareto shape) & 2.50 & Tail index \\
+$x_{\min}$ (Pareto scale) & 0.127 & Minimum shock size \\
+$\mathbb{E}[J]$ & 0.211 & Mean jump size (21.1\% log-move) \\
+$\text{Std}[J]$ & 0.189 & Jump size volatility \\
+$\mathbb{E}[J^2]$ & 0.080 & Second moment (for variance) \\
 \midrule
+$\mathbb{E}[S(1)]$ & 2.67/year & Expected annual impact \\
+$\text{Std}[S(1)]$ & 1.00/year & Annual impact volatility \\
 VaR (95\%) & 4.24 & 95th percentile annual impact \\
-CVaR (95\%) & 5.01 & Expected Shortfall (tail avg) \\
+CVaR (95\%) & 5.01 & Expected Shortfall \\
 \bottomrule
 \end{tabular}
 \end{table}
-\begin{itemize}
-    \item $\mathbb{E}[S] = \lambda \cdot \mathbb{E}[J] = 12.64 \times 0.211 = 2.67$
-    \item VaR/CVaR computed via 10,000 Monte Carlo simulations.
-\end{itemize}
 \end{frame}
 
 \begin{frame}{CPP: Jump Size Distribution}
@@ -428,7 +357,7 @@ CVaR (95\%) & 5.01 & Expected Shortfall (tail avg) \\
     \includegraphics[width=0.6\textwidth]{cpp_var.png}
 \end{center}
 \begin{itemize}
-    \item Distribution of annual cumulative shock impact.
+    \item Distribution of annual cumulative shock impact from 10,000 Monte Carlo simulations.
     \item VaR (95\%) $= 4.24$: ``In 95\% of years, total impact $\le$ 4.24.''
     \item CVaR (95\%) $= 5.01$: ``Average impact in worst 5\% of years.''
 \end{itemize}
@@ -438,7 +367,7 @@ CVaR (95\%) & 5.01 & Expected Shortfall (tail avg) \\
 \begin{table}[ht]
 \centering
 \small
-\begin{tabular}{lcccccc}
+\begin{tabular}{lccccc}
 \toprule
 Regime & $\lambda$/Year & $\mathbb{E}[J]$ & $\mathbb{E}[S]$/Year & VaR 95\% & CVaR 95\% \\
 \midrule
@@ -446,12 +375,18 @@ Pre-Crisis & 12.3 & 0.209 & 2.57 & 4.15 & 4.92 \\
 \textbf{COVID} & \textbf{17.3} & \textbf{0.262} & \textbf{4.53} & \textbf{7.44} & \textbf{9.65} \\
 Post-COVID & 11.6 & 0.188 & 2.19 & 3.44 & 3.85 \\
 Recent & 13.6 & 0.216 & 2.95 & 4.70 & 5.63 \\
+\midrule
+Full Sample & 12.6 & 0.211 & 2.67 & 4.24 & 5.01 \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\textbf{Key Result:} COVID regime exhibits:
 \begin{itemize}
-    \item COVID: Both higher arrival rate AND larger jumps $\Rightarrow$ 76\% higher $\mathbb{E}[S]$.
-    \item VaR nearly doubles during crisis periods.
+    \item \textbf{41\% higher arrival rate}: $\lambda_{\text{COVID}} = 17.3$ vs $\lambda_{\text{Pre}} = 12.3$
+    \item \textbf{25\% larger mean jumps}: $\mathbb{E}[J]_{\text{COVID}} = 0.262$ vs $\mathbb{E}[J]_{\text{Pre}} = 0.209$
+    \item \textbf{76\% higher expected annual impact}
+    \item \textbf{Nearly double VaR}
 \end{itemize}
 \end{frame}
 
@@ -465,64 +400,51 @@ Recent & 13.6 & 0.216 & 2.95 & 4.70 & 5.63 \\
 % CPP OUT-OF-SAMPLE EVALUATION
 % ============================================================
 
-\begin{frame}{CPP: Out-of-Sample Evaluation Framework}
-\textbf{Objective:} Test if CPP trained on historical data can forecast future shock dynamics.
-
-\vspace{0.5em}
+\begin{frame}{CPP: Out-of-Sample Evaluation}
 \textbf{Train-Test Split:}
 \begin{itemize}
-    \item Training: First 75\% of data (Jan 2010 -- Dec 2021)
-    \item Test: Remaining 25\% (Jan 2022 -- Nov 2025)
+    \item Training: January 2010 -- December 2021 (75\% of data, $\approx$3,100 observations)
+    \item Test: January 2022 -- November 2025 (25\% of data, $\approx$1,036 observations)
 \end{itemize}
 
 \vspace{0.5em}
-\textbf{Forecasting Approach:}
-\begin{enumerate}
-    \item Fit CPP on training data: estimate $\lambda$, $F$ (jump distribution)
-    \item For test period of $T$ days:
-    \begin{itemize}
-        \item Predicted shocks: $\hat{N} = \lambda \cdot T$
-        \item Predicted impact: $\hat{S} = \lambda \cdot \mathbb{E}[J] \cdot T$
-    \end{itemize}
-    \item Compare predictions to actual test period outcomes
-\end{enumerate}
-
-\vspace{0.5em}
-\textbf{Evaluation Metrics:}
-\begin{itemize}
-    \item Shock count error: $\frac{\hat{N} - N_{\text{actual}}}{N_{\text{actual}}}$
-    \item Impact error: $\frac{\hat{S} - S_{\text{actual}}}{S_{\text{actual}}}$
-    \item VaR exceedance: Did actual impact exceed predicted VaR 95\%?
-\end{itemize}
+\textbf{Forecasting:}
+\begin{align*}
+\text{Shock Count Forecast:} \quad & \hat{N}(T) = \hat{\lambda} \cdot T \\
+\text{Cumulative Impact Forecast:} \quad & \hat{S}(T) = \hat{\lambda} \cdot \hat{\mathbb{E}}[J] \cdot T \\
+\text{Risk Bounds:} \quad & \text{VaR}_T = \text{VaR}_{1\,\text{year}} \times \frac{T}{252}
+\end{align*}
 \end{frame}
 
 \begin{frame}{CPP: Out-of-Sample Results}
 \begin{table}[ht]
 \centering
+\small
 \begin{tabular}{lcc}
 \toprule
-Metric & Value & Interpretation \\
+Metric & Value & Notes \\
 \midrule
-Training Period & 2010--2021 & 75\% of data \\
-Test Period & 2022--2025 & 25\% of data \\
+\textit{Trained Parameters} & & \\
+$\hat{\lambda}$ & 0.050/day & 12.6 shocks/year \\
+$\hat{F}$ & Pareto & $\alpha = 2.50$, $x_{\min} = 0.127$ \\
+$\hat{\mathbb{E}}[J]$ & 0.211 & Mean jump size \\
+$\hat{\text{Std}}[J]$ & 0.189 & Jump volatility \\
 \midrule
-$\lambda$ (trained) & 0.050/day & 12.6 shocks/year \\
-Jump Dist (trained) & Pareto & $\alpha = 2.50$ \\
-$\mathbb{E}[J]$ (trained) & 0.211 & Mean jump size \\
+\textit{Test Period} & & \\
+Test Days & 1,036 & Approx.\ 4 years \\
+Actual Shocks & 63 & Observed \\
+Predicted Shocks & 51.8 & $\hat{\lambda} \times 1036$ \\
+Error & $-17.8\%$ & Underforecast \\
 \midrule
-Test Shocks (Actual) & 63 & 1,036 test days \\
-Test Shocks (Predicted) & 51.8 & $\lambda \times 1036$ \\
-Shock Count Error & $-17.8\%$ & Slight underforecast \\
+Actual Impact & 13.4 & $\sum_i |J_i|$ \\
+Predicted Impact & 10.9 & $\hat{\lambda} \cdot \hat{\mathbb{E}}[J] \cdot T$ \\
+Error & $-18.5\%$ & Underforecast \\
 \midrule
-Test Impact (Actual) & 13.4 & Cumulative $|r|$ \\
-Test Impact (Predicted) & 10.9 & $\lambda \cdot \mathbb{E}[J] \cdot T$ \\
-Impact Error & $-18.5\%$ & Slight underforecast \\
+Scaled VaR 95\% & 15.2 & For test period \\
+VaR Exceeded? & No & Actual $<$ VaR \\
 \bottomrule
 \end{tabular}
 \end{table}
-\begin{itemize}
-    \item Model slightly underpredicts $\Rightarrow$ test period had above-average shock activity (2022 rate hikes, 2024 volatility).
-\end{itemize}
 \end{frame}
 
 \begin{frame}{CPP: Out-of-Sample Distribution}
@@ -530,198 +452,76 @@ Impact Error & $-18.5\%$ & Slight underforecast \\
     \includegraphics[width=0.75\textwidth]{cpp_forecast.png}
 \end{center}
 \begin{itemize}
-    \item Gray: Simulated test period impacts using trained CPP.
-    \item Red dashed: Actual test period impact (13.4).
-    \item Actual falls within the bulk of the distribution $\Rightarrow$ model well-calibrated.
-\end{itemize}
-\end{frame}
-
-\begin{frame}{CPP: Key Out-of-Sample Findings}
-\begin{enumerate}
-    \item \textbf{Reasonable Forecasts:} $\sim$18\% underforecast error is acceptable given test period included 2022 Fed rate hikes and 2024 August volatility spike.
-    
-    \item \textbf{Distribution Calibration:} Actual outcome at 72nd percentile of simulated distribution---model is not overconfident.
-    
-    \item \textbf{VaR Coverage:} Actual impact (13.4) did NOT exceed scaled VaR 95\% (15.2 for test period) $\Rightarrow$ risk measure is conservative.
-    
-    \item \textbf{Parameter Stability:} Pareto distribution with $\alpha \approx 2.5$ remains appropriate for test period shocks.
-\end{enumerate}
-
-\vspace{0.5em}
-\textbf{Implication:} CPP provides reliable out-of-sample forecasts for shock risk quantification. Model can be used for forward-looking risk management with appropriate uncertainty bounds.
-\end{frame}
-
-\begin{frame}{Shock Magnitudes Over Time}
-\begin{center}
-    \includegraphics[width=0.6\textwidth]{shock_magnitudes.png}
-\end{center}
-\begin{itemize}
-    \item Top: Individual shock magnitudes with 20-shock rolling mean.
-    \item Bottom: Cumulative shock count shows acceleration during crises.
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Regime Analysis: Shock Rates Across Periods}
-\begin{table}[ht]
-\centering
-\begin{tabular}{lccccc}
-\toprule
-Regime & Period & Obs & Shocks & Rate/Year & Ann.\ Vol \\
-\midrule
-Pre-Crisis & 2010--2019 & 2,606 & 127 & 12.3 & 1.21 \\
-\textbf{COVID} & 2020 & 262 & 18 & \textbf{17.3} & \textbf{1.36} \\
-Post-COVID & 2021--2023 & 781 & 36 & 11.6 & 1.12 \\
-Recent & 2024--2025 & 499 & 27 & 13.6 & 1.34 \\
-\midrule
-Full Sample & 2010--2025 & 4,148 & 208 & 12.6 & 1.22 \\
-\bottomrule
-\end{tabular}
-\end{table}
-\begin{itemize}
-    \item COVID period: \textbf{41\% higher} shock rate (17.3 vs 12.3/year).
-    \item Volatility elevated across all crisis periods.
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Regime Comparison Visualization}
-\begin{center}
-    \includegraphics[width=0.85\textwidth]{regime_comparison.png}
-\end{center}
-\begin{itemize}
-    \item Bar chart shows clear elevation during COVID and recent volatility.
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Monthly Shock Counts}
-\begin{center}
-    \includegraphics[width=0.85\textwidth]{shock_counts.png}
-\end{center}
-\begin{itemize}
-    \item Notable clustering: 2011--12 (Euro crisis), 2018 (Volmageddon), 2020 (COVID), 2022 (rate hikes).
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Inter-Arrival Time Distribution}
-\begin{center}
-    \includegraphics[width=0.7\textwidth]{interarrival.png}
-\end{center}
-\begin{itemize}
-    \item Histogram vs.\ exponential PDF: reasonable fit validates Poisson assumption.
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Forecast Evaluation: Log-Scores}
-\begin{table}[ht]
-\centering
-\begin{tabular}{lc}
-\toprule
-Model & Log-Score (higher = better) \\
-\midrule
-GARCH & 1.275 \\
-\textbf{EWMA} & \textbf{1.376} \\
-Rolling Var & 1.276 \\
-HAR-RV & 1.271 \\
-\bottomrule
-\end{tabular}
-\end{table}
-\begin{itemize}
-    \item EWMA slightly outperforms GARCH out-of-sample.
-    \item Diebold--Mariano $p < 0.001$ $\Rightarrow$ difference is statistically significant.
-    \item HAR-RV comparable to rolling variance baseline.
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Cumulative Log-Score Difference}
-\begin{center}
-    \includegraphics[width=0.8\textwidth]{cum_loss_diff.png}
-\end{center}
-\begin{itemize}
-    \item Downward trend: EWMA consistently accumulates better scores.
-    \item GARCH rarely catches up, even briefly.
-\end{itemize}
-\end{frame}
-
-\begin{frame}{PIT Histogram (Calibration)}
-\begin{center}
-    \includegraphics[width=0.45\textwidth]{pit.png}
-\end{center}
-\begin{itemize}
-    \item Near-uniform distribution indicates well-calibrated density forecasts.
-    \item Mean $\approx 0.51$, std $\approx 0.26$ (ideal: 0.5, 0.29).
-    \item 95\% coverage: 95.0\% (at nominal).
+    \item Actual outcome at 72nd percentile of simulated distribution
+    \item VaR bounds not exceeded $\Rightarrow$ risk measure is conservative
+    \item Parameter stability: $\alpha \approx 2.6$ on test data alone confirms Pareto fit
 \end{itemize}
 \end{frame}
 
 % ============================================================
-\section{Discussion}
+\section{Discussion \& Conclusion}
 % ============================================================
 
 \begin{frame}{Key Findings}
 \begin{enumerate}
-    \item \textbf{Persistence:} VIX volatility shocks have a half-life of 4--10 days; EGARCH captures longer memory.
-    \item \textbf{Leverage Effect:} GJR-GARCH $\gamma = -0.27$ confirms asymmetric response.
-    \item \textbf{Self-Excitation:} Hawkes branching ratio $= 0.23$ $\Rightarrow$ shocks trigger more shocks.
-    \item \textbf{Compound Poisson:} Pareto-distributed jumps; VaR 95\% $= 4.24$/year.
-    \item \textbf{Regime Dependence:} COVID showed 76\% higher expected annual impact.
-    \item \textbf{CPP Out-of-Sample:} $\sim$18\% forecast error; VaR bounds respected; well-calibrated.
-    \item \textbf{Forecasting:} EWMA beats GARCH on log-score; both well-calibrated.
+    \item \textbf{GARCH Persistence:} VIX volatility shocks have a half-life of 4--10 days
+    \item \textbf{EGARCH Best Fit:} Lowest AIC; captures asymmetric leverage effect
+    \item \textbf{CPP Risk Quantification:} 
+    \begin{itemize}
+        \item Pareto-distributed jumps with $\alpha = 2.50$
+        \item VaR 95\% $= 4.24$/year, CVaR 95\% $= 5.01$/year
+    \end{itemize}
+    \item \textbf{Regime Dependence:} COVID showed 76\% higher expected annual impact
+    \item \textbf{CPP Out-of-Sample:} 
+    \begin{itemize}
+        \item $\sim$18\% forecast error (acceptable given unusual test period)
+        \item VaR bounds respected; model well-calibrated
+    \end{itemize}
 \end{enumerate}
 \end{frame}
 
-\begin{frame}{Practical Implications}
+\begin{frame}{Future Directions}
+\textbf{Potential model extensions:}
+
+\vspace{0.5em}
+\textbf{Hawkes Processes:}
 \begin{itemize}
-    \item \textbf{Risk Management:}
-    \begin{itemize}
-        \item Use EGARCH/GJR-GARCH for asymmetric VaR calculations.
-        \item Hawkes intensity provides real-time ``shock alert'' signals.
-        \item CPP gives VaR/CVaR for aggregate annual shock impact.
-    \end{itemize}
-    \item \textbf{Option Pricing:}
-    \begin{itemize}
-        \item Leverage effect matters: adjust for skewed vol-of-vol.
-        \item Pareto jumps justify heavy-tail adjustments in pricing.
-    \end{itemize}
-    \item \textbf{Portfolio Allocation:}
-    \begin{itemize}
-        \item Regime detection enables adaptive hedging strategies.
-        \item CPP regime analysis shows crisis periods need 2$\times$ risk budget.
-    \end{itemize}
+    \item Allows shock arrivals to be \textbf{self-exciting} (clustering of jumps)
+    \item Model aftershocks explicitly
+\end{itemize}
+
+\textbf{Hybrid Models:}
+\begin{itemize}
+    \item Combine GARCH with jump processes in one framework
+\end{itemize}
+
+\textbf{High-Frequency Data:}
+\begin{itemize}
+    \item Use intraday VIX futures or realized volatility to refine jump detection
+\end{itemize}
+
+\textbf{Multivariate VIX:}
+\begin{itemize}
+    \item Extend to joint modeling of VIX and other volatility indices for co-movements and contagion
+\end{itemize}
+
+\textbf{Machine Learning:}
+\begin{itemize}
+    \item Employ regime-switching ML or nonparametric methods to detect shifts in $\lambda$ and $\alpha$
 \end{itemize}
 \end{frame}
-
-\begin{frame}{Limitations}
-\begin{itemize}
-    \item GARCH re-estimation is computationally expensive; rolling used here.
-    \item EWMA's superiority may reflect VIX's strong mean-reversion.
-    \item NHPP covariates limited to lagged VIX; macro indicators could improve.
-    \item Hawkes estimation assumes exponential decay; other kernels possible.
-    \item Daily data only; intraday dynamics not captured.
-\end{itemize}
-\end{frame}
-
-\begin{frame}{Future Work}
-\begin{itemize}
-    \item Incorporate regime-switching GARCH (Markov-switching) models.
-    \item Test realized volatility from high-frequency data.
-    \item Extend NHPP/Hawkes with external regressors (credit spreads, VIX term structure).
-    \item Multivariate Hawkes for cross-asset shock contagion.
-    \item Deploy real-time monitoring dashboard with Hawkes intensity tracking.
-\end{itemize}
-\end{frame}
-
-% ============================================================
-\section{Conclusion}
-% ============================================================
 
 \begin{frame}{Conclusion}
 \begin{itemize}
-    \item VIX exhibits \textbf{persistent, asymmetric volatility clustering} well captured by EGARCH.
-    \item Large spikes arrive at $\sim$13/year and exhibit \textbf{self-excitation} (Hawkes branching ratio 0.23).
-    \item \textbf{Compound Poisson} quantifies aggregate shock risk: VaR 95\% $= 4.24$/year.
-    \item \textbf{CPP out-of-sample:} $\sim$18\% forecast error; VaR bounds respected; well-calibrated predictions.
-    \item \textbf{COVID regime} showed 76\% higher expected annual impact than baseline.
-    \item Out-of-sample, \textbf{EWMA remains a tough benchmark} to beat for density forecasting.
-    \item The reproducible pipeline (\texttt{runall.py}) with \textbf{28 unit tests} enables transparent research.
+    \item VIX exhibits \textbf{persistent, asymmetric volatility clustering} well captured by EGARCH
+    \item \textbf{Compound Poisson Process} quantifies aggregate shock risk:
+    \begin{itemize}
+        \item VaR 95\% $= 4.24$/year
+        \item CVaR 95\% $= 5.01$/year
+    \end{itemize}
+    \item \textbf{COVID regime} showed 76\% higher expected annual impact than baseline
+    \item \textbf{CPP out-of-sample}: $\sim$18\% forecast error; VaR bounds respected; well-calibrated
+    \item GARCH and CPP are \textbf{complementary}: GARCH for smooth variance dynamics, CPP for tail events
 \end{itemize}
 
 \vspace{1em}
@@ -734,33 +534,15 @@ HAR-RV & 1.271 \\
 \section*{Appendix}
 % ============================================================
 
-\begin{frame}[fragile]{Appendix: Project Structure}
-\small
-\begin{verbatim}
-Shock-Persistence-and-Shock-Frequency-in-VIX/
-+-- runall.py                  # Main pipeline
-+-- src/
-|   +-- config.py              # Parameters
-|   +-- data_pipeline.py       # Data loading
-|   +-- volatility_models.py   # GARCH/EGARCH/GJR/HAR-RV
-|   +-- shock_modeling.py      # HPP/NHPP/Hawkes/CPP
-|   +-- forecast_evaluation.py # OOS evaluation
-|   +-- visualization.py       # Plotting
-+-- tests/
-|   +-- test_models.py         # 28 unit tests
-+-- figures/                   # Generated plots
-\end{verbatim}
-\end{frame}
-
 \begin{frame}{Appendix: Key Equations}
-\textbf{Log-Score:}
+\textbf{GARCH(1,1):}
 \[
-S_t = \log f(r_t \mid \mu_t, \sigma_t^2)
+\sigma_t^2 = \omega + \alpha\, a_{t-1}^2 + \beta\, \sigma_{t-1}^2
 \]
 
-\textbf{Hawkes Intensity:}
+\textbf{EGARCH(1,1):}
 \[
-\lambda(t) = \mu + \sum_{t_i < t} \alpha \cdot e^{-\beta(t - t_i)}
+\ln \sigma_t^2 = \omega + \beta \ln \sigma_{t-1}^2 + \alpha\bigl(|\epsilon_{t-1}| - \mathbb{E}|\epsilon|\bigr) + \gamma\, \epsilon_{t-1}
 \]
 
 \textbf{Compound Poisson Process:}
@@ -779,10 +561,8 @@ S(T) = \sum_{i=1}^{N(T)} J_i, \quad N(T) \sim \mathrm{Poisson}(\lambda T), \quad
 \begin{itemize}
     \item Bollerslev, T. (1986). Generalized autoregressive conditional heteroskedasticity. \textit{J.\ Econometrics}.
     \item Nelson, D. B. (1991). Conditional heteroskedasticity in asset returns. \textit{Econometrica}.
-    \item Glosten, L. R., Jagannathan, R., \& Runkle, D. E. (1993). On the relation between expected value and volatility. \textit{J.\ Finance}.
-    \item Corsi, F. (2009). A simple approximate long-memory model of realized volatility. \textit{J.\ Financial Econometrics}.
-    \item Hawkes, A. G. (1971). Spectra of some self-exciting and mutually exciting point processes. \textit{Biometrika}.
-    \item Diebold, F. X., \& Mariano, R. S. (1995). Comparing predictive accuracy. \textit{JBES}.
+    \item Cont, R., \& Tankov, P. (2004). \textit{Financial Modelling with Jump Processes}. Chapman \& Hall/CRC.
+    \item McNeil, A. J., Frey, R., \& Embrechts, P. (2015). \textit{Quantitative Risk Management}. Princeton University Press.
 \end{itemize}
 \end{frame}
 
