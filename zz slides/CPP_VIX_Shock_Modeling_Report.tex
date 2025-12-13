@@ -73,16 +73,18 @@ In our VIX analysis, we identified approximately 208 shock events over 15 years 
 The CPP provides a principled framework for answering these questions.
 
 % ============================================================
-\subsection{Exploratory Data Analysis and GARCH-family Volatility Fitting}
+\section{Volatility Modeling: ARIMA and GARCH-family Models}
 % ============================================================
 
-This section documents the exploratory data analysis (EDA) and the GARCH-family volatility fitting steps that motivate our shock-based modeling framework. We focus on the VIX level and the transformed series
+This section documents the time-series volatility modeling component (ARIMA for the conditional mean and GARCH-family models for the conditional variance). This complements the CPP shock framework: GARCH/EGARCH captures smooth volatility clustering, while CPP focuses on discrete tail shocks.
+
+We focus on the VIX level and the transformed series
 \[
 d_t \;=\; \Delta \log(\mathrm{VIX})_t \;=\; \log(\mathrm{VIX}_t) - \log(\mathrm{VIX}_{t-1}),
 \]
 which is commonly used to stabilize variance and reduce persistence in level data.
 
-\subsubsection{VIX level versus SPY (context)}
+\subsection{Context: VIX and SPY}
 Figure~\ref{fig:vix_spy} shows the co-movement between VIX and the equity market proxy SPY: large VIX spikes tend to coincide with drawdowns or stress periods in equities.
 
 \begin{figure}[H]
@@ -91,6 +93,8 @@ Figure~\ref{fig:vix_spy} shows the co-movement between VIX and the equity market
 \caption{VIX level (left axis) and SPY price (right axis), 2010--2025.}
 \label{fig:vix_spy}
 \end{figure}
+
+\subsection{Autocorrelation and stationarity diagnostics}
 
 \subsubsection{Autocorrelation structure}
 The VIX level exhibits strong persistence (slowly decaying ACF), while $\Delta \log(\mathrm{VIX})$ is much closer to a weakly dependent / near white-noise series.
@@ -126,7 +130,7 @@ $\Delta \log(\mathrm{VIX})$ & KPSS & 0.0109   & 0.1000 & 35 & Fail to reject sta
 The VIX \textbf{level} is highly persistent and yields mixed stationarity evidence (ADF rejects unit root, KPSS rejects stationarity), while $\Delta \log(\mathrm{VIX})$ is \textbf{stationary} under both tests. This motivates modeling on $\Delta \log(\mathrm{VIX})$ and treating large moves as shock events.
 \end{keyresult}
 
-\subsubsection{Mean dynamics: best ARIMA for $\Delta \log(\mathrm{VIX})$ (by BIC)}
+\subsection{Mean dynamics: best ARIMA for $\Delta \log(\mathrm{VIX})$ (by BIC)}
 Let $d_t = \Delta \log(\mathrm{VIX})_t$. The best mean specification selected by BIC is an ARIMA$(1,0,1)$ (i.e., ARMA$(1,1)$) model:
 \[
 d_t \;=\; c \;+\; \phi\, d_{t-1} \;+\; \varepsilon_t \;+\; \theta\, \varepsilon_{t-1},
@@ -140,9 +144,10 @@ c \approx -3.81\times 10^{-5},\quad
 \]
 The residual diagnostics indicate non-normality and remaining heteroskedasticity, motivating a conditional volatility model for $\varepsilon_t$.
 
-\subsubsection{Volatility dynamics: GARCH$(1,1)$ vs.\ EGARCH$(1,1)$ (Student-\emph{t} innovations)}
+\subsection{Volatility dynamics: GARCH$(1,1)$ vs.\ EGARCH$(1,1)$ (Student-\emph{t} innovations)}
 We fit GARCH-family models to the ARMA residuals $\varepsilon_t$, using standardized Student-\emph{t} innovations to accommodate heavy tails.
 
+\subsubsection{Model specifications}
 \paragraph{GARCH$(1,1)$}
 \[
 \sigma_t^2 \;=\; \omega \;+\; \alpha\,\varepsilon_{t-1}^2 \;+\; \beta\,\sigma_{t-1}^2.
@@ -163,6 +168,7 @@ Let $z_{t-1}=\varepsilon_{t-1}/\sigma_{t-1}$. The EGARCH$(1,1)$ model is
 \]
 where $\gamma$ captures asymmetry (directional shocks can affect volatility differently).
 
+\subsubsection{Model selection by information criteria}
 \begin{table}[H]
 \centering
 \begin{tabular}{lcccc}
@@ -179,6 +185,25 @@ EGARCH$(1,1)$ & Student-\emph{t} & 26506.2 & 26537.6 & \textbf{Yes (best BIC)} \
 
 \begin{keyresult}
 By BIC, the best volatility specification is \textbf{EGARCH$(1,1)$ with Student-\emph{t} innovations}. This supports time-varying volatility and asymmetric responses of volatility to VIX moves.
+\end{keyresult}
+
+\subsubsection{Volatility persistence: half-life}
+A convenient summary of volatility persistence is the \emph{half-life}: the number of trading days required for a volatility shock to decay to half its initial effect.
+
+For GARCH$(1,1)$, persistence is typically summarized by $\rho=\alpha+\beta$ and
+\[
+h_{1/2} \approx \frac{\log(0.5)}{\log(\rho)}.
+\]
+Using $\alpha \approx 0.1758$ and $\beta \approx 0.6873$, we obtain $\rho \approx 0.8631$ and $h_{1/2}\approx 4.7$ trading days.
+
+For EGARCH$(1,1)$, log-volatility is AR(1)-like with coefficient $\beta$, so a common approximation is
+\[
+h_{1/2} \approx \frac{\log(0.5)}{\log(\beta)}.
+\]
+Using $\beta \approx 0.8652$, this yields $h_{1/2}\approx 4.8$ trading days.
+
+\begin{keyresult}
+Both GARCH$(1,1)$ and EGARCH$(1,1)$ imply a volatility shock half-life of roughly \textbf{5 trading days}, i.e.\ volatility shocks decay over about one trading week.
 \end{keyresult}
 
 \subsubsection{Conditional volatility overlays}
@@ -198,12 +223,13 @@ Figures~\ref{fig:vix_garch_vol}--\ref{fig:vix_egarch_vol} overlay the fitted con
 \label{fig:vix_egarch_vol}
 \end{figure}
 
-\subsubsection{Equity market stress and VIX volatility}
+\subsection{Equity market stress and VIX volatility}
 To relate volatility regimes to broader market stress, Figure~\ref{fig:sp500_egarch_vol} plots S\&P 500 daily log returns alongside the EGARCH-implied conditional volatility (scaled) from the VIX model. Large equity moves coincide with volatility spikes, reinforcing the interpretation of the fitted $\sigma_t$ as a stress indicator.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.95\textwidth]{s\&p500_EGARCH_vol.png}
+% NOTE: rename your figure file to avoid '&' in filename
+\includegraphics[width=0.95\textwidth]{sp500_EGARCH_vol.png}
 \caption{S\&P 500 daily log returns and EGARCH$(1,1)$ conditional volatility of VIX (scaled).}
 \label{fig:sp500_egarch_vol}
 \end{figure}
@@ -818,26 +844,15 @@ The CPP framework is directly applicable to pricing VIX derivatives:
 \section{Conclusion}
 % ============================================================
 
-The Compound Poisson Process provides a powerful framework for modeling VIX shock dynamics. Key findings include:
+We studied two complementary frameworks for modeling VIX dynamics over 2010--2025:
 
 \begin{enumerate}
-    \item \textbf{Jump Distribution}: VIX shock magnitudes follow a Pareto distribution with tail index $\alpha = 2.50$, confirming heavy-tailed behavior.
+    \item \textbf{Volatility clustering (ARIMA + GARCH-family):} After modeling $d_t=\Delta\log(\mathrm{VIX})_t$ with an ARIMA$(1,0,1)$ mean equation, GARCH-family conditional variance models capture time-varying volatility. Model selection by BIC favors \textbf{EGARCH$(1,1)$ with Student-\emph{t} innovations} over GARCH$(1,1)$, supporting asymmetric volatility responses. Both models imply a volatility shock half-life of roughly \textbf{5 trading days}, consistent with volatility clustering that decays over about one week.
     
-    \item \textbf{Risk Quantification}: Expected annual shock impact is 2.67, with VaR (95\%) = 4.24 and CVaR (95\%) = 5.01.
-    
-    \item \textbf{Regime Dependence}: Crisis periods show dramatically elevated risk---COVID exhibited 76\% higher expected impact than the pre-crisis baseline.
-    
-    \item \textbf{Out-of-Sample Performance}: The CPP model demonstrates reliable forecasting ability:
-    \begin{itemize}
-        \item Forecast errors of $\sim$18\% on the 2022--2025 test period
-        \item VaR bounds were \textbf{not exceeded}, confirming conservative risk estimates
-        \item Model is \textbf{well-calibrated}---actual outcomes fall within the bulk of predicted distributions
-    \end{itemize}
-    
-    \item \textbf{Practical Value}: The CPP framework enables principled capital allocation, stress testing, and derivatives pricing for VIX-related exposures.
+    \item \textbf{Jump/shock risk (Compound Poisson Process):} VIX shock magnitudes follow a Pareto distribution with tail index $\alpha = 2.50$, confirming heavy-tailed behavior. Expected annual shock impact is 2.67, with VaR (95\%) = 4.24 and CVaR (95\%) = 5.01. Regime analysis shows crisis periods exhibit both more frequent and larger shocks, and out-of-sample testing indicates conservative VaR coverage.
 \end{enumerate}
 
-The mathematical elegance of the CPP---combined with its empirical out-of-sample validity and practical applicability---makes it an essential tool for volatility risk management.
+Overall, the results support the view that \textbf{GARCH/EGARCH and CPP are complementary}: GARCH-family models explain smooth, persistent volatility dynamics, while CPP isolates and quantifies tail shock risk through explicit modeling of shock timing and magnitude.
 
 % ============================================================
 \section*{Appendix: Key Formulas Summary}
