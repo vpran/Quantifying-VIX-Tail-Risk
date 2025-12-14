@@ -30,7 +30,7 @@
     \hline
     \textbf{Key Result:}\\[0.3em]
 }{%
-    \\\hline
+    \\ \hline
     \end{tabular}
     \par\medskip
 }
@@ -70,7 +70,7 @@ In our VIX analysis, we identified approximately 208 shock events over 15 years 
     \item How does shock risk differ across market regimes?
 \end{itemize}
 
-The CPP provides a principled framework for answering these questions. In addition, we model the \emph{continuous} component of volatility dynamics using ARIMA for mean dynamics and GARCH-family models (GARCH/EGARCH) for conditional variance, which complements the CPP shock framework by capturing volatility clustering and asymmetry.
+The CPP provides a principled framework for answering these questions. In addition, we model the \emph{continuous} component of volatility dynamics using a mean--variance decomposition on $d_t=\Delta\log(\mathrm{VIX})_t$: an ARIMA model for the conditional mean and GARCH-family models (GARCH/EGARCH) for the conditional variance. This volatility modeling complements the CPP shock framework by capturing volatility clustering and asymmetry, and it enables a concise persistence metric via the \textbf{volatility half-life} (how quickly volatility shocks decay back toward baseline).
 
 % ============================================================
 \section{Foundations}
@@ -99,7 +99,7 @@ Figure~\ref{fig:vix_spy} shows the co-movement between VIX and the equity market
 \end{figure}
 
 \subsubsection{Autocorrelation structure}
-The VIX level exhibits strong persistence (slowly decaying ACF), while $\Delta \log(\mathrm{VIX})$ is much closer to a weakly dependent / near white-noise series.
+The VIX level exhibits strong persistence (slowly decaying ACF), while $\Delta \log(\mathrm{VIX})$ is much closer to a weakly dependent / near white-noise series. Motivated by this difference, our ARIMA mean model (selected by BIC) is fit to $d_t=\Delta\log(\mathrm{VIX})_t$ (i.e., log returns of VIX), and the GARCH/EGARCH volatility models are then fit to the resulting ARIMA residuals.
 
 \begin{figure}[H]
 \centering
